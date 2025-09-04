@@ -1,10 +1,10 @@
 pipeline {
   agent any
   environment {
-    NEXUS_URL = 'http://EC2_PUBLIC_DNS:8081'
+    NEXUS_URL = '100.27.188.180:8081'
     NEXUS_REPO = 'maven-releases'
     APP_NAME = 'NumberGuessGame'
-    TOMCAT_URL = 'http://EC2_PUBLIC_DNS:8082'
+    TOMCAT_URL = 'http://98.84.174.149:8082'
   }
   options { timestamps(); ansiColor('xterm'); buildDiscarder(logRotator(numToKeepStr: '20')) }
   stages {
