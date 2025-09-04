@@ -13,7 +13,7 @@ pipeline {
       steps {
         sh "mvn -B -DskipTests=false clean verify"
       }
-      post { always { junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml' } }
+      //post { always { junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml' } }
     }
     stage('Static Analysis (SonarQube)') {
       steps { withSonarQubeEnv('SonarQube') { sh 'mvn -B sonar:sonar' } }
