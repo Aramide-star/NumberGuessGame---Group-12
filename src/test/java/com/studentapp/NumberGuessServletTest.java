@@ -1,13 +1,13 @@
 package com.studentapp;
 
-package com.studentapp;
-
 import org.junit.Before;
 import org.junit.Test;
 import static org.junit.Assert.assertTrue;
 import org.mockito.Mockito;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
@@ -18,9 +18,7 @@ public class NumberGuessServletTest {
         private final int fixedTarget;
         TestableServlet(int fixedTarget) { this.fixedTarget = fixedTarget; }
         @Override
-        public int getTargetNumber() {
-            return fixedTarget;
-        }
+        public int getTargetNumber() { return fixedTarget; }
     }
 
     private NumberGuessServlet servlet;
@@ -34,7 +32,6 @@ public class NumberGuessServletTest {
         servlet = new TestableServlet(50);
         request = Mockito.mock(HttpServletRequest.class);
         response = Mockito.mock(HttpServletResponse.class);
-
         responseWriter = new StringWriter();
         Mockito.when(response.getWriter()).thenReturn(new PrintWriter(responseWriter));
     }
@@ -43,9 +40,7 @@ public class NumberGuessServletTest {
     public void testGuessTooLow() throws Exception {
         Mockito.when(request.getParameter("guess")).thenReturn("1");
         servlet.doPost(request, response);
-
         String out = responseWriter.toString();
-        // Your servlet prints "Try again" for incorrect guesses
         assertTrue("Should prompt to try again when guess is too low", out.contains("Try again"));
     }
 
@@ -53,7 +48,6 @@ public class NumberGuessServletTest {
     public void testGuessTooHigh() throws Exception {
         Mockito.when(request.getParameter("guess")).thenReturn("100");
         servlet.doPost(request, response);
-
         String out = responseWriter.toString();
         assertTrue("Should prompt to try again when guess is too high", out.contains("Try again"));
     }
@@ -62,9 +56,7 @@ public class NumberGuessServletTest {
     public void testCorrectGuess() throws Exception {
         Mockito.when(request.getParameter("guess")).thenReturn("50");
         servlet.doPost(request, response);
-
         String out = responseWriter.toString();
-        // Your servlet prints "You win" on correct guesses
         assertTrue("Should congratulate on correct guess", out.contains("You win"));
     }
 }
