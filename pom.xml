@@ -4,11 +4,10 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.studentapp</groupId>
-    <artifactId>NumberGuessingGame</artifactId>
+    <artifactId>NumberGuessGame</artifactId>
     <version>${project.version}</version>
     <packaging>war</packaging>
-    <name>NumberGuessingGame</name>
-
+    <name>Number Guessing Game</name>
     <url>http://maven.apache.org</url>
     <properties>
         <project.version>1.0-SNAPSHOT</project.version>
@@ -59,9 +58,7 @@
     <distributionManagement>
         <repository>
             <id>releases</id>
-
             <url>http://http://3.93.170.101:8081/nexus/content/repositories/releases</url>
-      
         </repository>
     </distributionManagement>
 </project>
