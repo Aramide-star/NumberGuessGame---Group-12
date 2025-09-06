@@ -8,7 +8,6 @@
     <version>${project.version}</version>
     <packaging>war</packaging>
     <name>NumberGuessingGame</name>
-
     <url>http://maven.apache.org</url>
     <properties>
         <project.version>1.0-SNAPSHOT</project.version>
@@ -52,16 +51,14 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>3.3.2</version>
+                <version>3.4.0</version>
             </plugin>
         </plugins>
     </build>
     <distributionManagement>
         <repository>
             <id>releases</id>
-
-            <url>http://http://3.93.170.101:8081/nexus/content/repositories/releases</url>
-      
+            <url>http://3.93.170.101:8081/nexus/content/repositories/releases</url>
         </repository>
     </distributionManagement>
 </project>
