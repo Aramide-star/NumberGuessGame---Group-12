@@ -1,10 +1,10 @@
 pipeline {
   agent any
   environment {
-    NEXUS_URL  = 'http://100.27.188.180:8081'     // add protocol
+    NEXUS_URL  = 'http://3.93.170.101:8081'     // add protocol
     NEXUS_REPO = 'maven-releases'
     APP_NAME   = 'NumberGuessGame'
-    TOMCAT_URL = 'http://98.84.174.149:8080'      // confirm this port is your Tomcat Manager
+    TOMCAT_URL = 'http://3.91.244.77:8080'      // confirm this port is your Tomcat Manager
   }
   options {
     timestamps()
