@@ -8,6 +8,7 @@
     <version>${project.version}</version>
     <packaging>war</packaging>
     <name>NumberGuessingGame</name>
+
     <url>http://maven.apache.org</url>
     <properties>
         <project.version>1.0-SNAPSHOT</project.version>
@@ -58,7 +59,9 @@
     <distributionManagement>
         <repository>
             <id>releases</id>
+
             <url>http://http://3.93.170.101:8081/nexus/content/repositories/releases</url>
+      
         </repository>
     </distributionManagement>
 </project>
