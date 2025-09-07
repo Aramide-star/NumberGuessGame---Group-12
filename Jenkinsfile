@@ -18,6 +18,7 @@ pipeline {
     TOMCAT_SSH_PORT    = '22'
     TOMCAT_WEBAPPS     = '/opt/tomcat/webapps'
     APP_NAME           = 'NumberGuessingGame'
+
   }
 
   stages {
@@ -42,10 +43,10 @@ pipeline {
       steps {
         withSonarQubeEnv("${env.SONARQUBE_SERVER}") {
           sh '''
-            set -e
             mvn -B sonar:sonar \
               -Dsonar.projectKey=com.studentapp:NumberGuessingGame \
               -Dsonar.projectName=NumberGuessingGame \
+              -Dsonar.host.url=http://54.234.39.41:9000/ \
               -Dsonar.sources=src/main/java,src/main/webapp \
               -Dsonar.tests=src/test/java \
               -Dsonar.java.binaries=target/classes
@@ -74,11 +75,7 @@ pipeline {
 
     stage('Package WAR') {
       steps {
-        sh '''
-          set -e
-          mvn -B -DskipTests package
-          ls -l target/*.war
-        '''
+        sh 'mvn -B -DskipTests package'
         archiveArtifacts artifacts: 'target/*.war', fingerprint: true
       }
     }
