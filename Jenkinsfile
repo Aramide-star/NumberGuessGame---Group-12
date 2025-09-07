@@ -124,48 +124,39 @@ pipeline {
     }
 
     stage('Deploy to Tomcat via SSH') {
-      steps {
-        // Requires: "SSH Agent" plugin OR use sshUserPrivateKey as below
-        withCredentials([sshUserPrivateKey(credentialsId: "${env.TOMCAT_SSH_CRED_ID}",
-                         keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
-          sh '''
-            set -euo pipefail
+     steps {
+    sshagent(credentials: ['tomcat-ssh']) {
+      sh '''
+        set -euo pipefail
 
-            WAR="$(ls -1 target/*.war | tail -n1)"
-            [ -f "$WAR" ] || { echo "WAR not found"; exit 2; }
+        WAR="$(ls -1 target/NumberGuessingGame-*.war | tail -n1)"
+        REMOTE_USER="ec2-user"
+        REMOTE_HOST="54.227.58.41"     # or use the DNS name, but not both
+        REMOTE_PORT="22"
+        REMOTE_TMP="/tmp/$(basename "$WAR")"
 
-            REMOTE="${SSH_USER}@${TOMCAT_SSH_HOST}"
-            PORT="${TOMCAT_SSH_PORT}"
-            REMOTE_TMP="/tmp/${APP_NAME}.$$.war"
+        echo "==> Copying $WAR to $REMOTE_USER@$REMOTE_HOST:$REMOTE_TMP"
+        scp -P "$REMOTE_PORT" -o StrictHostKeyChecking=no "$WAR" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_TMP"
 
-            echo "==> Copying WAR to ${REMOTE}:${REMOTE_TMP}"
-            scp -P "$PORT" -i "$SSH_KEY" -o StrictHostKeyChecking=no "$WAR" "${REMOTE}:${REMOTE_TMP}"
+        echo "==> Deploying on Tomcat"
+        ssh -p "$REMOTE_PORT" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" bash -lc "
+          set -euo pipefail
+          TOMCAT_HOME=/opt/tomcat
+          sudo systemctl stop tomcat || true
+          sudo rm -f \\$TOMCAT_HOME/webapps/NumberGuessingGame.war
+          sudo rm -rf \\$TOMCAT_HOME/webapps/NumberGuessingGame
+          sudo mv '$REMOTE_TMP' \\$TOMCAT_HOME/webapps/NumberGuessingGame.war
+          sudo chown tomcat:tomcat \\$TOMCAT_HOME/webapps/NumberGuessingGame.war
+          sudo systemctl start tomcat
+          sleep 5
+          sudo systemctl is-active --quiet tomcat
+        "
 
-            echo "==> Moving WAR into ${TOMCAT_WEBAPPS} with sudo and setting ownership"
-            ssh -p "$PORT" -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE}" "\
-              sudo mkdir -p '${TOMCAT_WEBAPPS}' && \
-              sudo mv -f '${REMOTE_TMP}' '${TOMCAT_WEBAPPS}/${APP_NAME}.war' && \
-              if id tomcat >/dev/null 2>&1; then sudo chown tomcat:tomcat '${TOMCAT_WEBAPPS}/${APP_NAME}.war' || true; fi"
-
-            echo "==> Restarting Tomcat (best-effort)"
-            ssh -p "$PORT" -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE}" '\
-              for SVC in '"${TOMCAT_SERVICE_CANDIDATES}"'; do
-                if systemctl is-enabled "$SVC" >/dev/null 2>&1; then
-                  sudo systemctl restart "$SVC" && exit 0
-                fi
-              done
-              if [ -x /opt/tomcat/bin/catalina.sh ]; then
-                sudo /opt/tomcat/bin/catalina.sh stop || true
-                sleep 2
-                sudo /opt/tomcat/bin/catalina.sh start && exit 0
-              fi
-              echo "WARN: No Tomcat service/catalina.sh found to restart." >&2
-            '
-          '''
-        }
-      }
+        echo "==> Deployed successfully."
+      '''
     }
   }
+}
 
   post {
     failure { echo ':x: Pipeline failed. See the failing stage for details.' }
