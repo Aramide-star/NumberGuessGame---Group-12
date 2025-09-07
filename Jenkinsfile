@@ -39,7 +39,7 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
-        withSonarQubeEnv('MySonarQubeServer') {
+        withSonarQubeEnv("${env.SONARQUBE_SERVER}") {
           sh '''
             set -e
             mvn -B sonar:sonar \
@@ -169,11 +169,7 @@ pipeline {
   }
 
   post {
-    success {
-      echo ':white_check_mark: Pipeline completed successfully.'
-    }
-    failure {
-      echo ':x: Pipeline failed. Check logs for details.'
-    }
+    failure { echo ':x: Pipeline failed. See the failing stage for details.' }
+    success { echo ':white_check_mark: Pipeline completed successfully.' }
   }
 }
