@@ -1,7 +1,6 @@
 pipeline {
   agent any
-  tools { maven 'Maven3' } // remove if mvn is already on PATH
-
+  tools { maven 'Maven_3' } // remove if mvn is already on PATH
   environment {
     // ---- SonarQube ----
     SONARQUBE_SERVER = 'MySonarQubeServer' // must match Manage Jenkins → System
