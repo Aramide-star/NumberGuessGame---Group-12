@@ -1,6 +1,7 @@
 pipeline {
   agent any
   tools { maven 'Maven_3' } // remove if mvn is already on PATH
+
   environment {
     // ---- SonarQube ----
     SONARQUBE_SERVER = 'MySonarQubeServer' // must match Manage Jenkins → System
@@ -12,12 +13,11 @@ pipeline {
     NEXUS2_REPO   = 'releases' // ensure this repo exists in Nexus 2
 
     // ---- Tomcat over SSH (Option A) ----
-    TOMCAT_SSH_CRED_ID = 'tomcat-ssh'        // Jenkins credential *ID* (SSH Username with private key)
-    TOMCAT_SSH_HOST    = '54.227.58.41'      // your Tomcat server IP/host
-    TOMCAT_SSH_PORT    = '22'                // change if non-standard
+    TOMCAT_SSH_CRED_ID = 'tomcat-ssh'   // Jenkins credential ID (SSH Username with private key)
+    TOMCAT_SSH_HOST    = '54.227.58.41' // Tomcat server IP/host
+    TOMCAT_SSH_PORT    = '22'
     TOMCAT_WEBAPPS     = '/opt/tomcat/webapps'
-    TOMCAT_SERVICE_CANDIDATES = 'tomcat9 tomcat' // checked in order
-    APP_NAME = 'NumberGuessingGame'
+    APP_NAME           = 'NumberGuessingGame'
   }
 
   stages {
@@ -32,14 +32,15 @@ pipeline {
         sh 'mvn -B clean verify'
       }
       post {
-        always { junit 'target/surefire-reports/*.xml' }
+        always {
+          junit 'target/surefire-reports/*.xml'
+        }
       }
     }
 
     stage('SonarQube Analysis') {
       steps {
         withSonarQubeEnv("${env.SONARQUBE_SERVER}") {
-          // Let the Jenkins Sonar config inject URL & token; no need to hardcode sonar.host.url
           sh '''
             set -e
             mvn -B sonar:sonar \
@@ -84,15 +85,12 @@ pipeline {
 
     stage('Publish to Nexus 2 (multipart form)') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'nexus2-deploy',
-                         usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+        withCredentials([usernamePassword(credentialsId: 'nexus2-deploy', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
           sh '''
             set -euo pipefail
 
-            # Probe Nexus 2
+            # Probe Nexus 2 and confirm repo exists
             curl -sSf "${NEXUS2_STATUS}" >/dev/null
-
-            # Confirm repo exists
             curl -sf "${NEXUS2_BASE}/service/local/repositories" | grep -q "<id>${NEXUS2_REPO}</id>"
 
             # Resolve GAV & WAR
@@ -112,6 +110,7 @@ pipeline {
               -F "p=war" \
               -F "e=war" \
               -F "file=@${WAR}")
+
             if [ "$CODE" != "201" ] && [ "$CODE" != "200" ]; then
               echo "Nexus 2 upload failed: HTTP $CODE"
               head -n 200 /tmp/nx2_resp.txt || true
@@ -124,39 +123,41 @@ pipeline {
     }
 
     stage('Deploy to Tomcat via SSH') {
-     steps {
-    sshagent(credentials: ['tomcat-ssh']) {
-      sh '''
-        set -euo pipefail
+      steps {
+        // uses Jenkins credential ID from env (must exist)
+        sshagent(credentials: [env.TOMCAT_SSH_CRED_ID]) {
+          sh '''
+            set -euo pipefail
 
-        WAR="$(ls -1 target/NumberGuessingGame-*.war | tail -n1)"
-        REMOTE_USER="ec2-user"
-        REMOTE_HOST="54.227.58.41"     # or use the DNS name, but not both
-        REMOTE_PORT="22"
-        REMOTE_TMP="/tmp/$(basename "$WAR")"
+            WAR="$(ls -1 target/NumberGuessingGame-*.war | tail -n1)"
+            REMOTE_USER="ec2-user"
+            REMOTE_HOST="'${TOMCAT_SSH_HOST}'"
+            REMOTE_PORT="'${TOMCAT_SSH_PORT}'"
+            REMOTE_TMP="/tmp/$(basename "$WAR")"
 
-        echo "==> Copying $WAR to $REMOTE_USER@$REMOTE_HOST:$REMOTE_TMP"
-        scp -P "$REMOTE_PORT" -o StrictHostKeyChecking=no "$WAR" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_TMP"
+            echo "==> Copying $WAR to ${REMOTE_USER}@${TOMCAT_SSH_HOST}:${REMOTE_TMP}"
+            scp -P ${TOMCAT_SSH_PORT} -o StrictHostKeyChecking=no "$WAR" "${REMOTE_USER}@${TOMCAT_SSH_HOST}:${REMOTE_TMP}"
 
-        echo "==> Deploying on Tomcat"
-        ssh -p "$REMOTE_PORT" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" bash -lc "
-          set -euo pipefail
-          TOMCAT_HOME=/opt/tomcat
-          sudo systemctl stop tomcat || true
-          sudo rm -f \\$TOMCAT_HOME/webapps/NumberGuessingGame.war
-          sudo rm -rf \\$TOMCAT_HOME/webapps/NumberGuessingGame
-          sudo mv '$REMOTE_TMP' \\$TOMCAT_HOME/webapps/NumberGuessingGame.war
-          sudo chown tomcat:tomcat \\$TOMCAT_HOME/webapps/NumberGuessingGame.war
-          sudo systemctl start tomcat
-          sleep 5
-          sudo systemctl is-active --quiet tomcat
-        "
+            echo "==> Deploying on Tomcat"
+            ssh -p ${TOMCAT_SSH_PORT} -o StrictHostKeyChecking=no "${REMOTE_USER}@${TOMCAT_SSH_HOST}" bash -lc "
+              set -euo pipefail
+              TOMCAT_HOME=$(dirname '${TOMCAT_WEBAPPS}')
+              sudo systemctl stop tomcat || sudo systemctl stop tomcat9 || true
+              sudo rm -f '${TOMCAT_WEBAPPS}/${APP_NAME}.war'
+              sudo rm -rf '${TOMCAT_WEBAPPS}/${APP_NAME}'
+              sudo mv '${REMOTE_TMP}' '${TOMCAT_WEBAPPS}/${APP_NAME}.war'
+              sudo chown -R tomcat:tomcat '${TOMCAT_WEBAPPS}'
+              sudo systemctl start tomcat || sudo systemctl start tomcat9
+              sleep 5
+              (sudo systemctl is-active --quiet tomcat || sudo systemctl is-active --quiet tomcat9)
+            "
 
-        echo "==> Deployed successfully."
-      '''
+            echo "==> Deployed successfully."
+          '''
+        }
+      }
     }
-  }
-}
+  }  // <--- CLOSES stages
 
   post {
     failure { echo ':x: Pipeline failed. See the failing stage for details.' }
