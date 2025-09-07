@@ -1,6 +1,5 @@
 pipeline {
   agent any
-  tools { maven 'Maven_3' } // remove if mvn is already on PATH
 
   environment {
     SONARQUBE_SERVER = 'MySonarQubeServer'
@@ -12,7 +11,7 @@ pipeline {
     TOMCAT_HOST      = '54.227.58.41'
     REMOTE_DIR       = '/opt/tomcat/webapps'
     
-  }
+ }
 
   stages {
     stage('Checkout') {
@@ -34,7 +33,6 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
-
         withSonarQubeEnv('MySonarQubeServer') {
           sh '''
             mvn -B sonar:sonar \
@@ -86,24 +84,24 @@ pipeline {
             def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1").trim()
 
             echo "Checking Nexus status..."
-            def scode = sh(returnStdout: true, script: "curl -s -o /dev/null -w '%{http_code}' '${NEXUS2_STATUS}'").trim()
+            def scode = sh(returnStdout: true, script: "curl -s -o /dev/null -w '%{http_code}' \"$NEXUS2_STATUS\"").trim()
             if (scode != '200') {
               error "Nexus status check failed with HTTP ${scode}"
             }
 
             echo "Uploading WAR to Nexus..."
-            def up = sh(returnStdout: true, script: """
-              curl -s -o /tmp/nx2_resp.txt -w '%{http_code}' \\
-                -u '${NEXUS_USER}:${NEXUS_PASS}' \\
-                -X POST '${NEXUS2_UPLOAD}' \\
-                -F r='${NEXUS2_REPO}' \\
-                -F g='${gid}' \\
-                -F a='${aid}' \\
-                -F v='${ver}' \\
-                -F p='war' \\
-                -F e='war' \\
-                -F file=@'${war}'
-            """).trim()
+            def up = sh(returnStdout: true, script: '''
+              curl -s -o /tmp/nx2_resp.txt -w '%{http_code}' \
+                -u "$NEXUS_USER:$NEXUS_PASS" \
+                -X POST "$NEXUS2_UPLOAD" \
+                -F r="$NEXUS2_REPO" \
+                -F g="$gid" \
+                -F a="$aid" \
+                -F v="$ver" \
+                -F p="war" \
+                -F e="war" \
+                -F file=@"$war"
+            ''').trim()
 
             if (up != '201' && up != '200') {
               def body = sh(returnStdout: true, script: "head -n 100 /tmp/nx2_resp.txt || true")
@@ -121,21 +119,31 @@ pipeline {
         withCredentials([sshUserPrivateKey(credentialsId: 'tomcat-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
           script {
             def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1").trim()
+
             echo "Deploying WAR to Tomcat at ${TOMCAT_HOST}"
 
-            sh "scp -i '${SSH_KEY}' -o StrictHostKeyChecking=no '${war}' '${SSH_USER}@${TOMCAT_HOST}:${REMOTE_DIR}/${APP_NAME}.war'"
+            sh '''
+              eval $(ssh-agent -s)
+              ssh-add "$SSH_KEY"
+              scp -o StrictHostKeyChecking=no "$war" "$SSH_USER@$TOMCAT_HOST:$REMOTE_DIR/$APP_NAME.war"
+            '''
 
-            sh """
-              ssh -i '${SSH_KEY}' -o StrictHostKeyChecking=no '${SSH_USER}@${TOMCAT_HOST}' \\
-              'if systemctl list-units --type=service | grep -q tomcat9; then sudo systemctl restart tomcat9; \\
-                elif systemctl list-units --type=service | grep -q tomcat; then sudo systemctl restart tomcat; \\
-                else echo "WARN: No Tomcat service found. Manual restart may be required."; fi'
-            """
+            sh '''
+              ssh -o StrictHostKeyChecking=no "$SSH_USER@$TOMCAT_HOST" '
+                if systemctl list-units --type=service | grep -q tomcat9; then
+                  sudo systemctl restart tomcat9;
+                elif systemctl list-units --type=service | grep -q tomcat; then
+                  sudo systemctl restart tomcat;
+                else
+                  echo "WARN: No Tomcat service found. Manual restart may be required.";
+                fi
+              '
+            '''
           }
         }
       }
     }
-  }  // <--- CLOSES stages
+  }
 
   post {
     success {
@@ -145,4 +153,4 @@ pipeline {
       echo ':x: Pipeline failed. Check logs for details.'
     }
   }
-} 
+}
