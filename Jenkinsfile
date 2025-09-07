@@ -10,7 +10,8 @@ pipeline {
     APP_NAME         = 'NumberGuessingGame'
     TOMCAT_HOST      = '54.227.58.41'
     REMOTE_DIR       = '/opt/tomcat/webapps'
-  }
+    
+ }
 
   stages {
     stage('Checkout') {
