@@ -14,7 +14,7 @@ pipeline {
 
     // App + Tomcat
     APP_NAME   = 'NumberGuessingGame'
-    TOMCAT_HOST = '54.227.58.41'
+    TOMCAT_HOST = 'ec2-user@54.227.58.41'
     REMOTE_DIR  = '/opt/tomcat/webapps'
   }
 
