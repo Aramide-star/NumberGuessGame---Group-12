@@ -132,7 +132,7 @@ pipeline {
         withCredentials([sshUserPrivateKey(credentialsId: 'tomcat-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
           script {
             def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1").trim()
-
+            
             if (!fileExists(war)) {
               error "WAR file not found for deployment: ${war}"
             }
