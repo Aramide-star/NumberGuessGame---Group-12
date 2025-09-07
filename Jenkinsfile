@@ -96,6 +96,20 @@ pipeline {
               error "❌ WAR file not found at path: ${war}. Ensure the package step completed successfully."
             }
 
+            echo "Resolved Metadata:"
+            echo "GroupId: ${gid}"
+            echo "ArtifactId: ${aid}"
+            echo "Version: ${ver}"
+            echo "WAR Path: ${war}"
+
+            if (!gid || !aid || !ver) {
+              error "Maven metadata extraction failed. Ensure pom.xml is valid and help:evaluate plugin is available."
+            }
+
+            if (!fileExists(war)) {
+              error "WAR file not found at path: ${war}"
+            }
+
             echo "Checking Nexus status..."
             def scode = sh(returnStdout: true, script: "curl -s -o /dev/null -w '%{http_code}' \"$NEXUS2_STATUS\"").trim()
             if (scode != '200') {
@@ -135,6 +149,7 @@ pipeline {
 
             if (!fileExists(war)) {
               error "❌ WAR file not found for deployment: ${war}"
+              
             }
 
             echo "Deploying WAR to Tomcat at ${TOMCAT_HOST}"
