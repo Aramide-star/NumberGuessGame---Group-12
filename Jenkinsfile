@@ -14,7 +14,7 @@ pipeline {
 
     // App + Tomcat
     APP_NAME   = 'NumberGuessingGame'
-    TOMCAT_HOST = '54.227.58.41'
+    TOMCAT_HOST = 'ec2-user@54.227.58.41'
     REMOTE_DIR  = '/opt/tomcat/webapps'
   }
 
@@ -141,7 +141,7 @@ pipeline {
     stage('Deploy to Tomcat') {
       steps {
         // Make sure Jenkins credential **TomcatCred** is an OpenSSH private key (no passphrase)
-        sshagent(credentials: ['TomcatCred']) {
+        sshagent(credentials: ['tomcat-ssh']) {
           sh '''
             set -euo pipefail
             WAR="$(ls -1 target/*.war | tail -n 1)"
