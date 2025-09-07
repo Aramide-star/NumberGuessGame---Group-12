@@ -3,21 +3,15 @@ pipeline {
   tools { maven 'Maven_3' } // remove if mvn is already on PATH
 
   environment {
-    // ---- SonarQube ----
-    SONARQUBE_SERVER = 'MySonarQubeServer' // must match Manage Jenkins → System
-
-    // ---- Nexus 2 (note the /nexus path) ----
-    NEXUS2_BASE   = 'http://54.234.93.25:8081/nexus'
-    NEXUS2_STATUS = "${NEXUS2_BASE}/service/local/status"
-    NEXUS2_UPLOAD = "${NEXUS2_BASE}/service/local/artifact/maven/content"
-    NEXUS2_REPO   = 'releases' // ensure this repo exists in Nexus 2
-
-    // ---- Tomcat over SSH (Option A) ----
-    TOMCAT_SSH_CRED_ID = 'tomcat-ssh'   // Jenkins credential ID (SSH Username with private key)
-    TOMCAT_SSH_HOST    = '54.227.58.41' // Tomcat server IP/host
-    TOMCAT_SSH_PORT    = '22'
-    TOMCAT_WEBAPPS     = '/opt/tomcat/webapps'
-    APP_NAME           = 'NumberGuessingGame'
+    SONARQUBE_SERVER = 'MySonarQubeServer'
+    NEXUS2_BASE      = 'http://54.234.93.25:8081/nexus'
+    NEXUS2_STATUS    = "${NEXUS2_BASE}/service/local/status"
+    NEXUS2_UPLOAD    = "${NEXUS2_BASE}/service/local/artifact/maven/content"
+    NEXUS2_REPO      = 'releases'
+    APP_NAME         = 'NumberGuessingGame'
+    TOMCAT_HOST      = '54.227.58.41'
+    REMOTE_DIR       = '/opt/tomcat/webapps'
+    
   }
 
   stages {
@@ -40,12 +34,13 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
-        withSonarQubeEnv("${env.SONARQUBE_SERVER}") {
+
+        withSonarQubeEnv('MySonarQubeServer') {
           sh '''
-            set -e
             mvn -B sonar:sonar \
               -Dsonar.projectKey=com.studentapp:NumberGuessingGame \
               -Dsonar.projectName=NumberGuessingGame \
+              -Dsonar.host.url=http://54.234.39.41:9000/ \
               -Dsonar.sources=src/main/java,src/main/webapp \
               -Dsonar.tests=src/test/java \
               -Dsonar.java.binaries=target/classes
@@ -56,8 +51,10 @@ pipeline {
 
     stage('Quality Gate') {
       steps {
-        timeout(time: 5, unit: 'MINUTES') {
-          waitForQualityGate abortPipeline: true
+        script {
+          timeout(time: 20, unit: 'MINUTES') {
+            waitForQualityGate abortPipeline: true
+          }
         }
       }
     }
@@ -74,94 +71,78 @@ pipeline {
 
     stage('Package WAR') {
       steps {
-        sh '''
-          set -e
-          mvn -B -DskipTests package
-          ls -l target/*.war
-        '''
+        sh 'mvn -B -DskipTests package'
         archiveArtifacts artifacts: 'target/*.war', fingerprint: true
       }
     }
 
-    stage('Publish to Nexus 2 (multipart form)') {
+    stage('Publish to Nexus 2') {
       steps {
         withCredentials([usernamePassword(credentialsId: 'nexus2-deploy', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-          sh '''
-            set -euo pipefail
+          script {
+            def gid = sh(returnStdout: true, script: "mvn -q -Dexpression=project.groupId -DforceStdout help:evaluate").trim()
+            def aid = sh(returnStdout: true, script: "mvn -q -Dexpression=project.artifactId -DforceStdout help:evaluate").trim()
+            def ver = sh(returnStdout: true, script: "mvn -q -Dexpression=project.version -DforceStdout help:evaluate").trim()
+            def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1").trim()
 
-            # Probe Nexus 2 and confirm repo exists
-            curl -sSf "${NEXUS2_STATUS}" >/dev/null
-            curl -sf "${NEXUS2_BASE}/service/local/repositories" | grep -q "<id>${NEXUS2_REPO}</id>"
+            echo "Checking Nexus status..."
+            def scode = sh(returnStdout: true, script: "curl -s -o /dev/null -w '%{http_code}' '${NEXUS2_STATUS}'").trim()
+            if (scode != '200') {
+              error "Nexus status check failed with HTTP ${scode}"
+            }
 
-            # Resolve GAV & WAR
-            GID="$(mvn -q -Dexpression=project.groupId -DforceStdout help:evaluate)"
-            AID="$(mvn -q -Dexpression=project.artifactId -DforceStdout help:evaluate)"
-            VER="$(mvn -q -Dexpression=project.version -DforceStdout help:evaluate)"
-            WAR="$(ls -1 target/*.war | tail -n1)"
+            echo "Uploading WAR to Nexus..."
+            def up = sh(returnStdout: true, script: """
+              curl -s -o /tmp/nx2_resp.txt -w '%{http_code}' \\
+                -u '${NEXUS_USER}:${NEXUS_PASS}' \\
+                -X POST '${NEXUS2_UPLOAD}' \\
+                -F r='${NEXUS2_REPO}' \\
+                -F g='${gid}' \\
+                -F a='${aid}' \\
+                -F v='${ver}' \\
+                -F p='war' \\
+                -F e='war' \\
+                -F file=@'${war}'
+            """).trim()
 
-            echo "==> Uploading ${WAR} as ${GID}:${AID}:${VER} to ${NEXUS2_REPO}"
-            CODE=$(curl -s -o /tmp/nx2_resp.txt -w '%{http_code}' \
-              -u "$NEXUS_USER:$NEXUS_PASS" \
-              -X POST "${NEXUS2_UPLOAD}" \
-              -F "r=${NEXUS2_REPO}" \
-              -F "g=${GID}" \
-              -F "a=${AID}" \
-              -F "v=${VER}" \
-              -F "p=war" \
-              -F "e=war" \
-              -F "file=@${WAR}")
+            if (up != '201' && up != '200') {
+              def body = sh(returnStdout: true, script: "head -n 100 /tmp/nx2_resp.txt || true")
+              error "Nexus upload failed (HTTP ${up})\nResponse:\n${body}"
+            }
 
-            if [ "$CODE" != "201" ] && [ "$CODE" != "200" ]; then
-              echo "Nexus 2 upload failed: HTTP $CODE"
-              head -n 200 /tmp/nx2_resp.txt || true
-              exit 1
-            fi
-            echo "==> Upload OK (HTTP ${CODE})."
-          '''
+            echo "Upload successful (HTTP ${up})"
+          }
         }
       }
     }
 
-    stage('Deploy to Tomcat via SSH') {
+    stage('Deploy to Tomcat') {
       steps {
-        // uses Jenkins credential ID from env (must exist)
-        sshagent(credentials: [env.TOMCAT_SSH_CRED_ID]) {
-          sh '''
-            set -euo pipefail
+        withCredentials([sshUserPrivateKey(credentialsId: 'tomcat-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
+          script {
+            def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1").trim()
+            echo "Deploying WAR to Tomcat at ${TOMCAT_HOST}"
 
-            WAR="$(ls -1 target/NumberGuessingGame-*.war | tail -n1)"
-            REMOTE_USER="ec2-user"
-            REMOTE_HOST="'${TOMCAT_SSH_HOST}'"
-            REMOTE_PORT="'${TOMCAT_SSH_PORT}'"
-            REMOTE_TMP="/tmp/$(basename "$WAR")"
+            sh "scp -i '${SSH_KEY}' -o StrictHostKeyChecking=no '${war}' '${SSH_USER}@${TOMCAT_HOST}:${REMOTE_DIR}/${APP_NAME}.war'"
 
-            echo "==> Copying $WAR to ${REMOTE_USER}@${TOMCAT_SSH_HOST}:${REMOTE_TMP}"
-            scp -P ${TOMCAT_SSH_PORT} -o StrictHostKeyChecking=no "$WAR" "${REMOTE_USER}@${TOMCAT_SSH_HOST}:${REMOTE_TMP}"
-
-            echo "==> Deploying on Tomcat"
-            ssh -p ${TOMCAT_SSH_PORT} -o StrictHostKeyChecking=no "${REMOTE_USER}@${TOMCAT_SSH_HOST}" bash -lc "
-              set -euo pipefail
-              TOMCAT_HOME=$(dirname '${TOMCAT_WEBAPPS}')
-              sudo systemctl stop tomcat || sudo systemctl stop tomcat9 || true
-              sudo rm -f '${TOMCAT_WEBAPPS}/${APP_NAME}.war'
-              sudo rm -rf '${TOMCAT_WEBAPPS}/${APP_NAME}'
-              sudo mv '${REMOTE_TMP}' '${TOMCAT_WEBAPPS}/${APP_NAME}.war'
-              sudo chown -R tomcat:tomcat '${TOMCAT_WEBAPPS}'
-              sudo systemctl start tomcat || sudo systemctl start tomcat9
-              sleep 5
-              (sudo systemctl is-active --quiet tomcat || sudo systemctl is-active --quiet tomcat9)
-            "
-
-            echo "==> Deployed successfully."
-          '''
+            sh """
+              ssh -i '${SSH_KEY}' -o StrictHostKeyChecking=no '${SSH_USER}@${TOMCAT_HOST}' \\
+              'if systemctl list-units --type=service | grep -q tomcat9; then sudo systemctl restart tomcat9; \\
+                elif systemctl list-units --type=service | grep -q tomcat; then sudo systemctl restart tomcat; \\
+                else echo "WARN: No Tomcat service found. Manual restart may be required."; fi'
+            """
+          }
         }
       }
     }
   }  // <--- CLOSES stages
 
   post {
-    failure { echo ':x: Pipeline failed. See the failing stage for details.' }
-    success { echo ':white_check_mark: Pipeline completed successfully.' }
+    success {
+      echo ':white_check_mark: Pipeline completed successfully.'
+    }
+    failure {
+      echo ':x: Pipeline failed. Check logs for details.'
     }
   }
 } 
