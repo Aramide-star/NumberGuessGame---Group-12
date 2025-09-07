@@ -13,7 +13,7 @@ pipeline {
     NEXUS2_REPO   = 'releases' // ensure this repo exists in Nexus 2
 
     // ---- Tomcat over SSH ----
-    TOMCAT_SSH_CRED_ID = 'TomcatCred'        // Jenkins credential ID (SSH Username with private key)
+    TOMCAT_SSH_CRED_ID = 'tomcat-ssh'        // Jenkins credential ID (SSH Username with private key)
     TOMCAT_SSH_HOST    = '54.227.58.41'
     TOMCAT_SSH_PORT    = '22'
     TOMCAT_WEBAPPS     = '/opt/tomcat/webapps'
