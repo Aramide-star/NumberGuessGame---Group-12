@@ -1,5 +1,6 @@
 pipeline {
   agent any
+  tools { maven 'Maven_3' } // remove if mvn is already on PATH
 
   environment {
     SONARQUBE_SERVER = 'MySonarQubeServer'
@@ -10,6 +11,7 @@ pipeline {
     APP_NAME         = 'NumberGuessingGame'
     TOMCAT_HOST      = '54.227.58.41'
     REMOTE_DIR       = '/opt/tomcat/webapps'
+    
   }
 
   stages {
@@ -32,6 +34,7 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
+
         withSonarQubeEnv('MySonarQubeServer') {
           sh '''
             mvn -B sonar:sonar \
@@ -132,7 +135,7 @@ pipeline {
         }
       }
     }
-  }
+  }  // <--- CLOSES stages
 
   post {
     success {
@@ -142,4 +145,4 @@ pipeline {
       echo ':x: Pipeline failed. Check logs for details.'
     }
   }
-}
+} 
