@@ -162,5 +162,6 @@ pipeline {
   post {
     failure { echo ':x: Pipeline failed. See the failing stage for details.' }
     success { echo ':white_check_mark: Pipeline completed successfully.' }
+    }
   }
-}
+} 
