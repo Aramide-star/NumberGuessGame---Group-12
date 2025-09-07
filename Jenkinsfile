@@ -77,10 +77,24 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'nexus2-deploy', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
           script {
-            def gid = sh(returnStdout: true, script: "mvn -q -Dexpression=project.groupId -DforceStdout help:evaluate").trim()
-            def aid = sh(returnStdout: true, script: "mvn -q -Dexpression=project.artifactId -DforceStdout help:evaluate").trim()
-            def ver = sh(returnStdout: true, script: "mvn -q -Dexpression=project.version -DforceStdout help:evaluate").trim()
-            def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1").trim()
+            def gid = sh(returnStdout: true, script: "mvn -q -Dexpression=project.groupId -DforceStdout help:evaluate || echo ''").trim()
+            def aid = sh(returnStdout: true, script: "mvn -q -Dexpression=project.artifactId -DforceStdout help:evaluate || echo ''").trim()
+            def ver = sh(returnStdout: true, script: "mvn -q -Dexpression=project.version -DforceStdout help:evaluate || echo ''").trim()
+            def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1 || echo ''").trim()
+
+            echo "Resolved Metadata:"
+            echo "GroupId: ${gid}"
+            echo "ArtifactId: ${aid}"
+            echo "Version: ${ver}"
+            echo "WAR Path: ${war}"
+
+            if (!gid || !aid || !ver) {
+              error "❌ Maven metadata extraction failed. Check your pom.xml and ensure help:evaluate plugin is configured."
+            }
+
+            if (!fileExists(war)) {
+              error "❌ WAR file not found at path: ${war}. Ensure the package step completed successfully."
+            }
 
             echo "Resolved Metadata:"
             echo "GroupId: ${gid}"
@@ -99,7 +113,7 @@ pipeline {
             echo "Checking Nexus status..."
             def scode = sh(returnStdout: true, script: "curl -s -o /dev/null -w '%{http_code}' \"$NEXUS2_STATUS\"").trim()
             if (scode != '200') {
-              error "Nexus status check failed with HTTP ${scode}"
+              error "❌ Nexus status check failed with HTTP ${scode}. Is the server up?"
             }
 
             echo "Uploading WAR to Nexus..."
@@ -118,10 +132,10 @@ pipeline {
 
             if (up != '201' && up != '200') {
               def body = sh(returnStdout: true, script: "head -n 100 /tmp/nx2_resp.txt || true")
-              error "Nexus upload failed (HTTP ${up})\nResponse:\n${body}"
+              error "❌ Nexus upload failed (HTTP ${up})\nResponse:\n${body}"
             }
 
-            echo "Upload successful (HTTP ${up})"
+            echo "✅ Upload successful (HTTP ${up})"
           }
         }
       }
@@ -131,10 +145,11 @@ pipeline {
       steps {
         withCredentials([sshUserPrivateKey(credentialsId: 'tomcat-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
           script {
-            def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1").trim()
-            
+            def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1 || echo ''").trim()
+
             if (!fileExists(war)) {
-              error "WAR file not found for deployment: ${war}"
+              error "❌ WAR file not found for deployment: ${war}"
+              
             }
 
             echo "Deploying WAR to Tomcat at ${TOMCAT_HOST}"
@@ -171,3 +186,4 @@ pipeline {
     }
   }
 }
+        
