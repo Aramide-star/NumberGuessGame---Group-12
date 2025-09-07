@@ -1,15 +1,24 @@
 pipeline {
   agent any
+  tools { maven 'Maven_3' } // remove if mvn is already on PATH
 
   environment {
-    SONARQUBE_SERVER = 'MySonarQubeServer'
-    NEXUS2_BASE      = 'http://54.234.93.25:8081/nexus'
-    NEXUS2_STATUS    = "${NEXUS2_BASE}/service/local/status"
-    NEXUS2_UPLOAD    = "${NEXUS2_BASE}/service/local/artifact/maven/content"
-    NEXUS2_REPO      = 'releases'
-    APP_NAME         = 'NumberGuessingGame'
-    TOMCAT_HOST      = '54.227.58.41'
-    REMOTE_DIR       = '/opt/tomcat/webapps'
+    // ---- SonarQube ----
+    SONARQUBE_SERVER = 'MySonarQubeServer' // must match Manage Jenkins → System
+
+    // ---- Nexus 2 (note the /nexus path) ----
+    NEXUS2_BASE   = 'http://54.234.93.25:8081/nexus'
+    NEXUS2_STATUS = "${NEXUS2_BASE}/service/local/status"
+    NEXUS2_UPLOAD = "${NEXUS2_BASE}/service/local/artifact/maven/content"
+    NEXUS2_REPO   = 'releases' // ensure this repo exists in Nexus 2
+
+    // ---- Tomcat over SSH ----
+    TOMCAT_SSH_CRED_ID = 'tomcat-ssh'
+    TOMCAT_SSH_HOST    = '54.227.58.41'
+    TOMCAT_SSH_PORT    = '22'
+    TOMCAT_WEBAPPS     = '/opt/tomcat/webapps'
+    APP_NAME           = 'NumberGuessingGame'
+
   }
 
   stages {
@@ -32,7 +41,7 @@ pipeline {
 
     stage('SonarQube Analysis') {
       steps {
-        withSonarQubeEnv('MySonarQubeServer') {
+        withSonarQubeEnv("${env.SONARQUBE_SERVER}") {
           sh '''
             mvn -B sonar:sonar \
               -Dsonar.projectKey=com.studentapp:NumberGuessingGame \
@@ -48,10 +57,8 @@ pipeline {
 
     stage('Quality Gate') {
       steps {
-        script {
-          timeout(time: 20, unit: 'MINUTES') {
-            waitForQualityGate abortPipeline: true
-          }
+        timeout(time: 20, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: true
         }
       }
     }
@@ -75,115 +82,88 @@ pipeline {
 
     stage('Publish to Nexus 2') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'nexus2-deploy', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-          script {
-            def gid = sh(returnStdout: true, script: "mvn -q -Dexpression=project.groupId -DforceStdout help:evaluate || echo ''").trim()
-            def aid = sh(returnStdout: true, script: "mvn -q -Dexpression=project.artifactId -DforceStdout help:evaluate || echo ''").trim()
-            def ver = sh(returnStdout: true, script: "mvn -q -Dexpression=project.version -DforceStdout help:evaluate || echo ''").trim()
-            def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1 || echo ''").trim()
+        withCredentials([usernamePassword(credentialsId: 'nexus2-deploy',
+                          usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+          sh """
+            set -euo pipefail
 
-            echo "Resolved Metadata:"
-            echo "GroupId: ${gid}"
-            echo "ArtifactId: ${aid}"
-            echo "Version: ${ver}"
-            echo "WAR Path: ${war}"
+            echo "==> Checking Nexus 2 status: ${NEXUS2_STATUS}"
+            STATUS=\$(curl -s -o /dev/null -w '%{http_code}' "${NEXUS2_STATUS}")
+            [ "\$STATUS" = "200" ] || { echo "Nexus status HTTP \$STATUS"; exit 1; }
 
-            if (!gid || !aid || !ver) {
-              error "❌ Maven metadata extraction failed. Check your pom.xml and ensure help:evaluate plugin is configured."
-            }
+            echo "==> Verifying repository exists: ${NEXUS2_REPO}"
+            curl -sf "${NEXUS2_BASE}/service/local/repositories" | grep -q "<id>${NEXUS2_REPO}</id>"
 
-            if (!fileExists(war)) {
-              error "❌ WAR file not found at path: ${war}. Ensure the package step completed successfully."
-            }
+            echo "==> Resolving GAV & WAR"
+            GID=\$(mvn -q -Dexpression=project.groupId -DforceStdout help:evaluate)
+            AID=\$(mvn -q -Dexpression=project.artifactId -DforceStdout help:evaluate)
+            VER=\$(mvn -q -Dexpression=project.version -DforceStdout help:evaluate)
+            WAR=\$(ls -1 target/*.war | tail -n1)
 
-            echo "Resolved Metadata:"
-            echo "GroupId: ${gid}"
-            echo "ArtifactId: ${aid}"
-            echo "Version: ${ver}"
-            echo "WAR Path: ${war}"
+            echo "Resolved: \$GID:\$AID:\$VER"
+            echo "WAR: \$WAR"
+            [ -s "\$WAR" ] || { echo "WAR not found"; exit 1; }
 
-            if (!gid || !aid || !ver) {
-              error "Maven metadata extraction failed. Ensure pom.xml is valid and help:evaluate plugin is available."
-            }
+            echo "==> Uploading to Nexus 2 repo '${NEXUS2_REPO}'"
+            CODE=\$(curl -s -o /tmp/nx2_resp.txt -w '%{http_code}' \\
+              -u "\$NEXUS_USER:\$NEXUS_PASS" \\
+              -X POST "${NEXUS2_UPLOAD}" \\
+              -F r="${NEXUS2_REPO}" \\
+              -F g="\$GID" \\
+              -F a="\$AID" \\
+              -F v="\$VER" \\
+              -F p="war" \\
+              -F e="war" \\
+              -F file=@"\$WAR")
 
-            if (!fileExists(war)) {
-              error "WAR file not found at path: ${war}"
-            }
-
-            echo "Checking Nexus status..."
-            def scode = sh(returnStdout: true, script: "curl -s -o /dev/null -w '%{http_code}' \"$NEXUS2_STATUS\"").trim()
-            if (scode != '200') {
-              error "❌ Nexus status check failed with HTTP ${scode}. Is the server up?"
-            }
-
-            echo "Uploading WAR to Nexus..."
-            def up = sh(returnStdout: true, script: '''
-              curl -s -o /tmp/nx2_resp.txt -w '%{http_code}' \
-                -u "$NEXUS_USER:$NEXUS_PASS" \
-                -X POST "$NEXUS2_UPLOAD" \
-                -F r="$NEXUS2_REPO" \
-                -F g="$gid" \
-                -F a="$aid" \
-                -F v="$ver" \
-                -F p="war" \
-                -F e="war" \
-                -F file=@"$war"
-            ''').trim()
-
-            if (up != '201' && up != '200') {
-              def body = sh(returnStdout: true, script: "head -n 100 /tmp/nx2_resp.txt || true")
-              error "❌ Nexus upload failed (HTTP ${up})\nResponse:\n${body}"
-            }
-
-            echo "✅ Upload successful (HTTP ${up})"
-          }
+            if [ "\$CODE" != "201" ] && [ "\$CODE" != "200" ]; then
+              echo "Nexus 2 upload failed (HTTP \$CODE)"
+              head -n 200 /tmp/nx2_resp.txt || true
+              exit 1
+            fi
+            echo "==> Upload OK (HTTP \$CODE)."
+          """
         }
       }
     }
 
     stage('Deploy to Tomcat') {
       steps {
-        withCredentials([sshUserPrivateKey(credentialsId: 'tomcat-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
-          script {
-            def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1 || echo ''").trim()
+        sshagent(credentials: [env.TOMCAT_SSH_CRED_ID]) {
+          sh """
+            set -euo pipefail
 
-            if (!fileExists(war)) {
-              error "❌ WAR file not found for deployment: ${war}"
-              
-            }
+            WAR=\$(ls -1 target/${APP_NAME}-*.war | tail -n1)
+            REMOTE_USER="ec2-user"
+            REMOTE_HOST="${TOMCAT_SSH_HOST}"
+            REMOTE_PORT="${TOMCAT_SSH_PORT}"
+            REMOTE_TMP="/tmp/\$(basename "\$WAR")"
 
-            echo "Deploying WAR to Tomcat at ${TOMCAT_HOST}"
+            echo "==> Copying WAR to \$REMOTE_USER@\$REMOTE_HOST:\$REMOTE_TMP"
+            scp -P "\$REMOTE_PORT" -o StrictHostKeyChecking=no "\$WAR" "\$REMOTE_USER@\$REMOTE_HOST:\$REMOTE_TMP"
 
-            sh '''
-              eval $(ssh-agent -s)
-              ssh-add "$SSH_KEY"
-              scp -o StrictHostKeyChecking=no "$war" "$SSH_USER@$TOMCAT_HOST:$REMOTE_DIR/$APP_NAME.war"
-            '''
+            echo "==> Deploying on Tomcat"
+            ssh -p "\$REMOTE_PORT" -o StrictHostKeyChecking=no "\$REMOTE_USER@\$REMOTE_HOST" bash -lc '
+              set -euo pipefail
+              sudo systemctl stop tomcat || sudo systemctl stop tomcat9 || true
+              sudo rm -f  "${TOMCAT_WEBAPPS}/${APP_NAME}.war"
+              sudo rm -rf "${TOMCAT_WEBAPPS}/${APP_NAME}"
+              sudo mv     "'"$REMOTE_TMP"'" "${TOMCAT_WEBAPPS}/${APP_NAME}.war"
+              sudo chown -R tomcat:tomcat "${TOMCAT_WEBAPPS}"
+              sudo systemctl start tomcat || sudo systemctl start tomcat9
+              sleep 5
+              (sudo systemctl is-active --quiet tomcat || sudo systemctl is-active --quiet tomcat9)
+            '
 
-            sh '''
-              ssh -o StrictHostKeyChecking=no "$SSH_USER@$TOMCAT_HOST" '
-                if systemctl list-units --type=service | grep -q tomcat9; then
-                  sudo systemctl restart tomcat9;
-                elif systemctl list-units --type=service | grep -q tomcat; then
-                  sudo systemctl restart tomcat;
-                else
-                  echo "WARN: No Tomcat service found. Manual restart may be required.";
-                fi
-              '
-            '''
-          }
+            echo "==> Deployed successfully."
+          """
         }
       }
     }
   }
 
   post {
-    success {
-      echo ':white_check_mark: Pipeline completed successfully.'
-    }
-    failure {
-      echo ':x: Pipeline failed. Check logs for details.'
-    }
+    failure { echo ':x: Pipeline failed. See the failing stage for details.' }
+    success { echo ':white_check_mark: Pipeline completed successfully.' }
   }
 }
-        
