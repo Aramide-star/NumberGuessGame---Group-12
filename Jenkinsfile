@@ -10,8 +10,7 @@ pipeline {
     APP_NAME         = 'NumberGuessingGame'
     TOMCAT_HOST      = '54.227.58.41'
     REMOTE_DIR       = '/opt/tomcat/webapps'
-    
- }
+  }
 
   stages {
     stage('Checkout') {
@@ -83,6 +82,20 @@ pipeline {
             def ver = sh(returnStdout: true, script: "mvn -q -Dexpression=project.version -DforceStdout help:evaluate").trim()
             def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1").trim()
 
+            echo "Resolved Metadata:"
+            echo "GroupId: ${gid}"
+            echo "ArtifactId: ${aid}"
+            echo "Version: ${ver}"
+            echo "WAR Path: ${war}"
+
+            if (!gid || !aid || !ver) {
+              error "Maven metadata extraction failed. Ensure pom.xml is valid and help:evaluate plugin is available."
+            }
+
+            if (!fileExists(war)) {
+              error "WAR file not found at path: ${war}"
+            }
+
             echo "Checking Nexus status..."
             def scode = sh(returnStdout: true, script: "curl -s -o /dev/null -w '%{http_code}' \"$NEXUS2_STATUS\"").trim()
             if (scode != '200') {
@@ -119,6 +132,10 @@ pipeline {
         withCredentials([sshUserPrivateKey(credentialsId: 'tomcat-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
           script {
             def war = sh(returnStdout: true, script: "find target -name '*.war' | sort | tail -n 1").trim()
+            
+            if (!fileExists(war)) {
+              error "WAR file not found for deployment: ${war}"
+            }
 
             echo "Deploying WAR to Tomcat at ${TOMCAT_HOST}"
 
