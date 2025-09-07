@@ -139,34 +139,43 @@ pipeline {
     }
 
     stage('Deploy to Tomcat') {
-      steps {
-        // Make sure Jenkins credential **TomcatCred** is an OpenSSH private key (no passphrase)
-        sshagent(credentials: ['TomcatCred']) {
-          sh '''
-            set -euo pipefail
-            WAR="$(ls -1 target/*.war | tail -n 1)"
-            echo "==> Copying ${WAR} to ec2-user@${TOMCAT_HOST}:${REMOTE_DIR}/${APP_NAME}.war"
-            scp -P 22 -o StrictHostKeyChecking=no "${WAR}" "ec2-user@${TOMCAT_HOST}:${REMOTE_DIR}/${APP_NAME}.war"
+  steps {
+    // Use the SSH credential ID that exists in Jenkins
+    sshagent(credentials: ['TomcatCred']) {
+      sh '''
+        set -euo pipefail
 
-            echo "==> Restarting Tomcat"
-            ssh -p 22 -o StrictHostKeyChecking=no "ec2-user@${TOMCAT_HOST}" '
-              set -e
-              if systemctl list-units --type=service | grep -q tomcat9; then
-                sudo systemctl restart tomcat9
-              elif systemctl list-units --type=service | grep -q tomcat; then
-                sudo systemctl restart tomcat
-              else
-                echo "WARN: No Tomcat service found; ensure auto-deploy is enabled."
-              fi
-              sleep 5
-              (sudo systemctl is-active --quiet tomcat || sudo systemctl is-active --quiet tomcat9) || exit 1
-            '
-            echo "==> Deployed successfully."
-          '''
-        }
-      }
+        WAR="$(ls -1 target/*.war | tail -n 1)"
+        REMOTE_USER="ec2-user"
+        REMOTE_HOST="${TOMCAT_HOST}"             # from environment block
+        REMOTE="${REMOTE_USER}@${REMOTE_HOST}"
+        REMOTE_PATH="${REMOTE_DIR}/${APP_NAME}.war"
+
+        echo "==> Sanity-check SSH"
+        ssh -o BatchMode=yes -o StrictHostKeyChecking=no "$REMOTE" 'echo OK' >/dev/null
+
+        echo "==> Copying $WAR to $REMOTE:$REMOTE_PATH"
+        scp -P 22 -o StrictHostKeyChecking=no "$WAR" "$REMOTE:$REMOTE_PATH"
+
+        echo "==> Restarting Tomcat"
+        ssh -p 22 -o StrictHostKeyChecking=no "$REMOTE" '
+          set -e
+          if systemctl list-units --type=service | grep -q tomcat9; then
+            sudo systemctl restart tomcat9
+          elif systemctl list-units --type=service | grep -q tomcat; then
+            sudo systemctl restart tomcat
+          else
+            echo "WARN: No Tomcat service found; ensure auto-deploy is enabled."
+          fi
+          sleep 5
+          (sudo systemctl is-active --quiet tomcat9 || sudo systemctl is-active --quiet tomcat)
+        '
+
+        echo "==> Deployed successfully."
+      '''
     }
   }
+}
 
   post {
     failure { echo ':x: Pipeline failed. See the failing stage for details.' }
