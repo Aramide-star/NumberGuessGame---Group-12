@@ -13,12 +13,11 @@ pipeline {
     NEXUS2_REPO   = 'releases' // ensure this repo exists in Nexus 2
 
     // ---- Tomcat over SSH ----
-    TOMCAT_SSH_CRED_ID = 'tomcat-ssh'
+    TOMCAT_SSH_CRED_ID = 'TomcatCred'        // Jenkins credential ID (SSH Username with private key)
     TOMCAT_SSH_HOST    = '54.227.58.41'
     TOMCAT_SSH_PORT    = '22'
     TOMCAT_WEBAPPS     = '/opt/tomcat/webapps'
     APP_NAME           = 'NumberGuessingGame'
-
   }
 
   stages {
@@ -129,34 +128,38 @@ pipeline {
 
     stage('Deploy to Tomcat') {
       steps {
+        // Use the existing Jenkins SSH key credential (must be the correct OpenSSH private key, no passphrase)
         sshagent(credentials: [env.TOMCAT_SSH_CRED_ID]) {
-          sh """
+          sh '''
             set -euo pipefail
 
-            WAR=\$(ls -1 target/${APP_NAME}-*.war | tail -n1)
+            WAR="$(ls -1 target/*.war | tail -n 1)"
             REMOTE_USER="ec2-user"
             REMOTE_HOST="${TOMCAT_SSH_HOST}"
             REMOTE_PORT="${TOMCAT_SSH_PORT}"
-            REMOTE_TMP="/tmp/\$(basename "\$WAR")"
+            REMOTE="${REMOTE_USER}@${REMOTE_HOST}"
+            REMOTE_TMP="/tmp/$(basename "$WAR")"
 
-            echo "==> Copying WAR to \$REMOTE_USER@\$REMOTE_HOST:\$REMOTE_TMP"
-            scp -P "\$REMOTE_PORT" -o StrictHostKeyChecking=no "\$WAR" "\$REMOTE_USER@\$REMOTE_HOST:\$REMOTE_TMP"
+            echo "==> Sanity-check SSH"
+            ssh -p "$REMOTE_PORT" -o BatchMode=yes -o StrictHostKeyChecking=no "$REMOTE" 'echo OK' >/dev/null
+
+            echo "==> Copying $WAR to $REMOTE:$REMOTE_TMP"
+            scp -P "$REMOTE_PORT" -o StrictHostKeyChecking=no "$WAR" "$REMOTE:$REMOTE_TMP"
 
             echo "==> Deploying on Tomcat"
-            ssh -p "\$REMOTE_PORT" -o StrictHostKeyChecking=no "\$REMOTE_USER@\$REMOTE_HOST" bash -lc '
-              set -euo pipefail
-              sudo systemctl stop tomcat || sudo systemctl stop tomcat9 || true
-              sudo rm -f  "${TOMCAT_WEBAPPS}/${APP_NAME}.war"
-              sudo rm -rf "${TOMCAT_WEBAPPS}/${APP_NAME}"
-              sudo mv     "'"$REMOTE_TMP"'" "${TOMCAT_WEBAPPS}/${APP_NAME}.war"
-              sudo chown -R tomcat:tomcat "${TOMCAT_WEBAPPS}"
-              sudo systemctl start tomcat || sudo systemctl start tomcat9
-              sleep 5
+            ssh -p "$REMOTE_PORT" -o StrictHostKeyChecking=no "$REMOTE" "set -e;
+              sudo systemctl stop tomcat || sudo systemctl stop tomcat9 || true;
+              sudo rm -f '${TOMCAT_WEBAPPS}/${APP_NAME}.war';
+              sudo rm -rf '${TOMCAT_WEBAPPS}/${APP_NAME}';
+              sudo mv '${REMOTE_TMP}' '${TOMCAT_WEBAPPS}/${APP_NAME}.war';
+              sudo chown tomcat:tomcat '${TOMCAT_WEBAPPS}/${APP_NAME}.war';
+              sudo systemctl start tomcat || sudo systemctl start tomcat9;
+              sleep 5;
               (sudo systemctl is-active --quiet tomcat || sudo systemctl is-active --quiet tomcat9)
-            '
+            "
 
             echo "==> Deployed successfully."
-          """
+          '''
         }
       }
     }
