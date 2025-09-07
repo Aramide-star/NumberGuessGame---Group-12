@@ -6,7 +6,7 @@ pipeline {
     SONARQUBE_SERVER = 'MySonarQubeServer'
 
     // Nexus 2 endpoints (note the /nexus path)
-    NEXUS2_BASE   = 'http://3.93.170.101:8081/nexus'
+    NEXUS2_BASE   = 'http://54.234.93.25:8081/nexus'
     NEXUS2_STATUS = "${NEXUS2_BASE}/service/local/status"
     NEXUS2_UPLOAD = "${NEXUS2_BASE}/service/local/artifact/maven/content"
     NEXUS2_REPO   = 'releases'   // make sure this repo exists in Nexus 2
@@ -33,7 +33,7 @@ pipeline {
     stage('SonarQube Analysis') {
       steps {
         withSonarQubeEnv("${env.SONARQUBE_SERVER}") {
-          sh 'mvn -B sonar:sonar -Dsonar.projectKey=com.studentapp:NumberGuessingGame -Dsonar.projectName=NumberGuessingGame -Dsonar.host.url=http://54.221.103.235:9000/ -Dsonar.sources=src/main/java,src/main/webapp -Dsonar.tests=src/test/java -Dsonar.java.binaries=target/classes'
+          sh 'mvn -B sonar:sonar -Dsonar.projectKey=com.studentapp:NumberGuessingGame -Dsonar.projectName=NumberGuessingGame -Dsonar.host.url=http://54.234.39.41:9000/ -Dsonar.sources=src/main/java,src/main/webapp -Dsonar.tests=src/test/java -Dsonar.java.binaries=target/classes'
         }
       }
     }
@@ -130,7 +130,7 @@ ${body}
             def war = sh(returnStdout: true, script: "ls target/*.war | tail -n 1").trim()
             def appName   = 'NumberGuessingGame'
             def remoteDir = '/opt/tomcat/webapps'
-            def host      = '3.9.244.77'   // SSH host (no port here)
+            def host      = '54.227.58.41'   // SSH host (no port here)
 
             echo "==> Copying WAR to ${host}:${remoteDir}/${appName}.war"
             sh "scp -i '${SSH_KEY}' -o StrictHostKeyChecking=no '${war}' '${SSH_USER}@${host}:${remoteDir}/${appName}.war'"
