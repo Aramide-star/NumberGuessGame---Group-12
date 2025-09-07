@@ -1,43 +1,141 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-<modelVersion>4.0.0</modelVersion>
-<groupId>com.studentapp</groupId>
-<artifactId>NumberGuessingGame</artifactId>
-<version>1.0.0</version>
-<packaging>war</packaging>
-<properties>
-<maven.compiler.source>17</maven.compiler.source>
-<maven.compiler.target>17</maven.compiler.target>
-<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-</properties>
-<dependencies>
-<dependency>
-<groupId>jakarta.servlet</groupId>
-<artifactId>jakarta.servlet-api</artifactId>
-<version>6.0.0</version>
-<scope>provided</scope>
-</dependency>
-<dependency>
-<groupId>org.junit.jupiter</groupId>
-<artifactId>junit-jupiter</artifactId>
-<version>5.10.2</version>
-<scope>test</scope>
-</dependency>
-</dependencies>
-<build>
-<plugins>
-<plugin>
-<groupId>org.apache.maven.plugins</groupId>
-<artifactId>maven-war-plugin</artifactId>
-<version>3.4.0</version>
-<configuration>
-<failOnMissingWebXml>false</failOnMissingWebXml>
-</configuration>
-</plugin>
-<plugin>
-<groupId>org.apache.maven.plugins</groupId>
-<artifactId>maven-surefire-plugin</artifactId>
-<version>3.2.5</version>
-</plugin>
-</plugins>
-</build>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.studentapp</groupId>
+  <artifactId>NumberGuessingGame</artifactId>
+  <version>1.0.0</version>
+  <packaging>war</packaging>
+  <name>NumberGuessingGame</name>
+  <description>Simple Jakarta Servlet/JSP Number Guessing Game (WAR)</description>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <!-- Plugin versions -->
+    <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+    <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
+    <maven.war.plugin.version>3.4.0</maven.war.plugin.version>
+    <sonar.maven.plugin.version>3.10.0.2594</sonar.maven.plugin.version>
+
+    <!-- Test stack versions -->
+    <junit.jupiter.version>5.10.2</junit.jupiter.version>
+    <junit.vintage.version>5.10.2</junit.vintage.version>
+    <junit4.version>4.13.2</junit4.version>
+    <mockito.version>5.12.0</mockito.version>
+
+    <!-- Sonar (can also be supplied via CI flags instead) -->
+    <sonar.projectKey>com.studentapp:NumberGuessingGame</sonar.projectKey>
+    <sonar.projectName>NumberGuessingGame</sonar.projectName>
+    <sonar.sources>src/main/java,src/main/webapp</sonar.sources>
+    <sonar.tests>src/test/java</sonar.tests>
+    <sonar.java.binaries>target/classes</sonar.java.binaries>
+  </properties>
+
+  <dependencies>
+    <!-- Jakarta Servlet API for Tomcat 10+ -->
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <version>6.0.0</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- ===== Test stack ===== -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.jupiter.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Run legacy JUnit 4 tests on JUnit 5 platform -->
+    <dependency>
+      <groupId>org.junit.vintage</groupId>
+      <artifactId>junit-vintage-engine</artifactId>
+      <version>${junit.vintage.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- (Optional) JUnit 4 API if old tests still import org.junit.* -->
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>${junit4.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>${mockito.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Keep javax API ONLY if some test helpers still compile against javax.* -->
+    <dependency>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <version>4.0.1</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>${project.artifactId}-${project.version}</finalName>
+    <plugins>
+      <!-- Explicit compiler plugin pin -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${maven.compiler.plugin.version}</version>
+        <configuration>
+          <release>${maven.compiler.source}</release>
+        </configuration>
+      </plugin>
+
+      <!-- Unit tests -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven.surefire.plugin.version}</version>
+        <configuration>
+          <!-- Good default for JPMS projects; harmless otherwise -->
+          <useModulePath>false</useModulePath>
+        </configuration>
+      </plugin>
+
+      <!-- WAR packaging -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>${maven.war.plugin.version}</version>
+        <configuration>
+          <failOnMissingWebXml>false</failOnMissingWebXml>
+        </configuration>
+      </plugin>
+
+      <!-- SonarQube (Jenkins can run: mvn -B -DskipTests sonar:sonar) -->
+      <plugin>
+        <groupId>org.sonarsource.scanner.maven</groupId>
+        <artifactId>sonar-maven-plugin</artifactId>
+        <version>${sonar.maven.plugin.version}</version>
+      </plugin>
+    </plugins>
+  </build>
+
+  <!-- Deploy targets (match IDs with your ~/.m2/settings.xml <servers>) -->
+  <distributionManagement>
+    <repository>
+      <id>nexus-releases</id>
+      <url>http://3.93.170.101:8081/repository/maven-releases</url>
+    </repository>
+    <snapshotRepository>
+      <id>nexus-snapshots</id>
+      <url>http://3.93.170.101:8081/repository/maven-snapshots</url>
+    </snapshotRepository>
+  </distributionManagement>
 </project>
